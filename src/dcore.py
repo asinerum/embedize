@@ -9,9 +9,14 @@ from typing import Callable
 from pydantic import BaseModel
 
 DBENGINE = 'SQLite'
-ADMINDB = 'db/admin.db'
 DUCKDBENGINE = 'DUCK'
-ADMINDUCKDB = 'db/dadmin.db'
+
+DBFOLDER = 'db/'
+DUCKDBFOLDER = 'dbd/'
+
+ADMINDB = DBFOLDER + 'admin.db'
+ADMINDUCKDB = DUCKDBFOLDER + 'admin.db'
+SYSADMINDBS = [ADMINDB, ADMINDUCKDB]
 
 ADMINDBNAME = 'admin'
 ADMINZONENAME = 'ADMIN'
@@ -118,7 +123,7 @@ def admindb (engine):
   return ADMINDB if engine in [sqlite3, None] else (ADMINDUCKDB if engine in [duckdb] else None)
 
 def dbprefix (engine, defval='x'):
-  return '' if engine in [sqlite3, None] else ('d' if engine in [duckdb] else defval)
+  return '' ## if engine in [sqlite3, None] else ('d' if engine in [duckdb] else defval)
 
 def get_zonedb (zoneidn, engine):
   return f"{dbprefix(engine)}{ADMINDBNAME if (zoneid:=get_zoneid(zoneidn, engine=engine))==ADMINZONE else (str(zoneid) if zoneid is not None else '')}"
@@ -234,11 +239,12 @@ def get_rowcount (cursor, engine=None):
     rowcount = cursor.rowcount
   return rowcount
 
-def attach (cursor, engine=None):
-  try:
-    cursor.execute(f"ATTACH DATABASE '{admindb(engine or sys_engine)}' AS admin")
-  except:
-    pass
+def attach (cursor, engine, db_path):
+  if db_path != (db:=admindb(engine or sys_engine)):
+    try:
+      cursor.execute(f"ATTACH DATABASE '{db}' AS admin")
+    except:
+      pass
 
 def connect_duckdb (db_path: str):
   conn = duckdb.connect(db_path)
@@ -264,7 +270,8 @@ set_connect(connect_sqlite)
 def zonedb (zoneid: any, engine=None) -> str:
   engine = engine or sys_engine
   zoneid = get_zonedb(zoneid, engine=engine)
-  return None if zoneid is None else f'db/{zoneid}.db'
+  dbfolder = DUCKDBFOLDER if engine in [duckdb] else DBFOLDER
+  return None if zoneid in ['d', '', None] else f'{dbfolder}{zoneid}.db'
 
 def getdb (zoneid: any, engine=None) -> str:
   engine = engine or sys_engine
@@ -391,7 +398,7 @@ def execute_table_create_insert_update (db_path: str, query: str, values: dict={
   try:
     conn = connect(db_path)
     cursor = conn.cursor()
-    attach(cursor, engine=engine)
+    attach(cursor, engine=engine, db_path=db_path)
     if script and engine in [sqlite3, None]:
       cursor.executescript(query)
     else:
@@ -430,7 +437,7 @@ def fetch_table_as_list_of_dict (db_path: str, query: str, values: dict={}, retq
   try:
     conn = connect(db_path)
     cursor = conn.cursor()
-    attach(cursor, engine=engine)
+    attach(cursor, engine=engine, db_path=db_path)
     newquery = update_placeholders(query, engine)
     newvalues = update_values(query, values, engine)
     if pandas:
@@ -455,7 +462,7 @@ def fetch_table_as_simple_list (db_path: str, query: str, values: dict={}, retqu
   try:
     conn = connect(db_path)
     cursor = conn.cursor()
-    attach(cursor, engine=engine)
+    attach(cursor, engine=engine, db_path=db_path)
     newquery = update_placeholders(query, engine)
     newvalues = update_values(query, values, engine)
     if pandas:
@@ -499,7 +506,7 @@ def error_unexpect (err: str, aid: str=UNKNOWN) -> dict:
   return dict_result([], err, UNERROR, aid=aid)
 
 def db_exist (db_path: str, engine=None) -> bool:
-  if '/.' in db_path: return False
+  if not db_path or '/.' in str(db_path): return False
   engine = engine or sys_engine
   try:
     if os.path.isfile(db_path):

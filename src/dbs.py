@@ -97,7 +97,7 @@ def attach_user_exists (id_placeholder):
   return f'EXISTS (SELECT 1 FROM admin.users WHERE id={id_placeholder})'
 
 def attach_user_check (idname_placeholder):
-  return f'(SELECT id FROM admin.users WHERE {check_idname(idname_placeholder)})'
+  return f'(SELECT id FROM admin.users WHERE {check_query_idname(idname_placeholder)})'
 
 def user_name_exists (name_placeholder):
   return f'EXISTS (SELECT 1 FROM users WHERE name=LOWER(TRIM({name_placeholder})))'
@@ -107,6 +107,9 @@ def user_id_exists (id_placeholder):
 
 def check_obj_active (active_placeholder):
   return f'(obj.active = (CASE WHEN {active_placeholder} IN (0,1) THEN {active_placeholder} ELSE obj.active END))'
+
+def attach_check_obj_zone_name (name_placeholder):
+  return f'(obj.zone = (SELECT id FROM admin.zones WHERE name=UPPER(TRIM({name_placeholder})) LIMIT 1))'
 
 def check_obj_zone_name (name_placeholder):
   return f'(obj.zone = (SELECT id FROM zones WHERE name=UPPER(TRIM({name_placeholder})) LIMIT 1))'
@@ -120,14 +123,11 @@ def check_user_id_or_name (id_placeholder, name_placeholder):
 def check_strict_user_id_or_name (id_placeholder, name_placeholder):
   return f'(users.id={id_placeholder} OR users.name=LOWER(TRIM({name_placeholder})))'
 
-def check_strict_user_worktime (worktime_placeholder):
-  return f"(users.workend IS NULL OR DATE({worktime_placeholder}) BETWEEN IFNULL(DATE(users.workbegin), DATE('1900-01-01')) AND DATE(users.workend))"
+check_strict_user_active = lambda: f'(users.active=1 AND users.zone IN (SELECT id FROM zones WHERE active=1))'
+check_strict_user_worktime = lambda worktime_placeholder: f"(users.workend IS NULL OR DATE({worktime_placeholder}) BETWEEN IFNULL(DATE(users.workbegin), DATE('1900-01-01')) AND DATE(users.workend))"
 
 def check_strict_user_working (worktime_placeholder):
   return f'({check_strict_user_active()} AND {check_strict_user_worktime(worktime_placeholder)})'
-
-def check_strict_user_active ():
-  return f'(users.active=1 AND users.zone IN (SELECT id FROM zones WHERE active=1))'
 
 def check_zone_id_or_name (id_placeholder, name_placeholder):
   return f'(id={id_placeholder} OR name=UPPER(TRIM({name_placeholder})))'
@@ -140,26 +140,26 @@ def set_user_modify (modifier_placeholder):
 
 set_modifier_value = set_user_modify
 
-def check_user_id (id_placeholder, name_placeholder):
-  return f'((user={id_placeholder} OR users.name=LOWER(TRIM({name_placeholder}))) AND user=users.id)'
+def attach_check_user_id (id_placeholder, name_placeholder):
+  return f'((user={id_placeholder} OR admin.users.name=LOWER(TRIM({name_placeholder}))) AND user=admin.users.id)'
 
 def check_user_in_specs (user_placeholder, name_placeholder):
-  return f'({check_user_id(user_placeholder, name_placeholder)} AND spec=specs.id)'
+  return f'({attach_check_user_id(user_placeholder, name_placeholder)} AND spec=specs.id)'
 
 def check_user_in_roles (user_placeholder, name_placeholder):
-  return f'({check_user_id(user_placeholder, name_placeholder)} AND role=roles.id)'
+  return f'({attach_check_user_id(user_placeholder, name_placeholder)} AND role=roles.id)'
 
 def check_user_spec (user_placeholder, name_placeholder, spec_placeholder):
-  return f'({check_user_id(user_placeholder, name_placeholder)} AND spec={spec_placeholder})'
+  return f'({attach_check_user_id(user_placeholder, name_placeholder)} AND spec={spec_placeholder})'
 
 def check_user_role (user_placeholder, name_placeholder, role_placeholder):
-  return f'({check_user_id(user_placeholder, name_placeholder)} AND role={role_placeholder})'
+  return f'({attach_check_user_id(user_placeholder, name_placeholder)} AND role={role_placeholder})'
 
 def check_user_spec_in_specs (user_placeholder, name_placeholder, spec_placeholder):
-  return f'({check_user_id(user_placeholder, name_placeholder)} AND spec={spec_placeholder} AND spec=specs.id)'
+  return f'({attach_check_user_id(user_placeholder, name_placeholder)} AND spec={spec_placeholder} AND spec=specs.id)'
 
 def check_user_role_in_roles (user_placeholder, name_placeholder, role_placeholder):
-  return f'({check_user_id(user_placeholder, name_placeholder)} AND role={role_placeholder} AND role=roles.id)'
+  return f'({attach_check_user_id(user_placeholder, name_placeholder)} AND role={role_placeholder} AND role=roles.id)'
 
 check_id_or_uuid = check_uid_identify
 
@@ -169,8 +169,7 @@ def check_id_or_name (id_placeholder, name_placeholder):
 def check_iduuid (placeholder):
   return f'(TRIM(CAST(id AS VARCHAR))=TRIM({placeholder}) OR LOWER(TRIM(uuid))=LOWER(TRIM({placeholder})))'
 
-def check_idname (placeholder):
-  return f'(TRIM(CAST(id AS VARCHAR))=TRIM({placeholder}) OR LOWER(TRIM(name))=LOWER(TRIM({placeholder})))'
+check_query_idname = lambda placeholder: f'(TRIM(CAST(id AS VARCHAR))=TRIM({placeholder}) OR LOWER(TRIM(name))=LOWER(TRIM({placeholder})))'
 
 def check_strict_idname (placeholder):
   return f'(TRIM(CAST(users.id AS VARCHAR))=TRIM({placeholder}) OR LOWER(TRIM(users.name))=LOWER(TRIM({placeholder})))'
@@ -185,26 +184,16 @@ check_admin_or_moderator_of = check_ones_admin_or_moderator
 
 check_admin_of = check_ones_admin
 
-def zone_of_user (user_placeholder):
-  return f'(SELECT zone FROM users WHERE {check_idname(user_placeholder)})'
-
-def zone_by_user (user_placeholder):
-  return f'(SELECT id FROM zones WHERE id IN {zone_of_user(user_placeholder)})'
-
-def zone_by_idname (idn_placeholder):
-  return f'(SELECT id FROM zones WHERE id={idn_placeholder} OR name=UPPER(TRIM({idn_placeholder})) LIMIT 1)'
-
-def zone_of_zoneuser (zone_placeholder, user_placeholder):
-  return f'(SELECT id FROM zones WHERE {check_idname(zone_placeholder)} OR id IN {zone_of_user(user_placeholder)})'
-
-def zone_case_idname (zone_placeholder):
-  return f"(CASE WHEN {zone_placeholder} != '' THEN (SELECT id FROM zones WHERE {check_idname(zone_placeholder)}) ELSE zone END)"
+zone_of_user = lambda user_placeholder: f'(SELECT zone FROM users WHERE {check_query_idname(user_placeholder)})'
+zone_by_user = lambda user_placeholder: f'(SELECT id FROM zones WHERE id IN {zone_of_user(user_placeholder)})'
+zone_of_zoneuser = lambda zone_placeholder, user_placeholder: f'(SELECT id FROM zones WHERE {check_query_idname(zone_placeholder)} OR id IN {zone_of_user(user_placeholder)})'
+zone_case_idname = lambda zone_placeholder: f"(CASE WHEN {zone_placeholder} != '' THEN (SELECT id FROM zones WHERE {check_query_idname(zone_placeholder)}) ELSE zone END)"
 
 def get_zoneidn_by_useridn (zone_placeholder, user_placeholder):
   return f"(CASE WHEN {user_placeholder} != '' THEN {zone_by_user(user_placeholder)} ELSE {zone_case_idname(zone_placeholder)} END)"
 
 def zone_case_system (zone_placeholder, zone='zone'):
-  return f"(CASE WHEN TRIM({zone_placeholder})='0' OR UPPER(TRIM({zone_placeholder}))='ADMIN' THEN {zone} ELSE (SELECT id FROM zones WHERE {check_idname(zone_placeholder)} LIMIT 1) END)"
+  return f"(CASE WHEN TRIM({zone_placeholder})='0' OR UPPER(TRIM({zone_placeholder}))='ADMIN' THEN {zone} ELSE (SELECT id FROM zones WHERE {check_query_idname(zone_placeholder)} LIMIT 1) END)"
 
 def increase_id (table):
   return f'(SELECT IFNULL(MAX(id),0)+1 FROM {table})'
